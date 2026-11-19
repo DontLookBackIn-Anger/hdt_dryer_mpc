@@ -16,14 +16,19 @@ conda active dryer-ts
 cd ~/hdt_dryer_mpc
 # 将当前项目的所有核心文件添加到暂存区
 git add .
+# 仅取消暂存，保留本地代码修改（最常用）
+git reset
 # 检查暂存区状态，确认没有多余的临时或结果大文件
 git status
 # 提交到本地版本库
-git commit -m "feat: initial commit for tsn distributed network control simulation"
+git commit -m "feat: initial commit"
 # 将当前分支重命名为 main（与远程默认分支对齐）
 git branch -M main
 # 关联你的 GitHub 远程仓库
-git remote add origin https://github.com/DontLookBackIn-Anger/tsn-distributed-network-control-simulation-system.git
+https://github.com/DontLookBackIn-Anger/hdt_dryer_mpc
+git remote add origin https://github.com/DontLookBackIn-Anger/hdt_dryer_mpc.git
+# 验证是否成功
+git remote -v
 # 推送至远程仓库并建立上游追踪
 git push -u origin main
 
