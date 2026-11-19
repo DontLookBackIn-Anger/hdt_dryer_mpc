@@ -1,0 +1,12 @@
+data/raw/
+data/processed/
+checkpoints/
+outputs/
+lightning_logs/
+mlflow/
+mlruns/
+__pycache__/
+*.pyc
+*.onnx
+*.ckpt
+EOF
