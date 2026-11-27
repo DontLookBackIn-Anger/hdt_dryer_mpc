@@ -87,18 +87,22 @@ def to_nf(df, uid, off_days=0):
     return o
 
 
-# 3 个训练批次 + 1 个测试批次 = 4 条独立序列（全局模型的标准用法）
-train_nf = pd.concat(
-    [to_nf(simulate_hdt_batch(1200, seed=s), f"train_{i}", i * 100)
-     for i, s in enumerate(TRAIN_SEEDS)], ignore_index=True)
+# 严格防数据泄漏（科研基本功）：
+#   NeuralForecast 只能用【3 个训练批次】拟合（绝不能把 test_nf 放进 nf.fit！）。
+#   由于 TimeXer/iTransformer 的 n_series 必须与训练序列数一致（=3），
+#   测试滚动预测时，我们用 [train_0, train_1, test] 组成 3 条序列输入 predict()，
+#   其中 test 从未出现在训练集中，彻底杜绝测试集泄漏。
+train_dfs_nf = [to_nf(simulate_hdt_batch(1200, seed=s), f"train_{i}", i * 100)
+                for i, s in enumerate(TRAIN_SEEDS)]
+train_nf = pd.concat(train_dfs_nf, ignore_index=True)
+train_ctx_pair = pd.concat(train_dfs_nf[:len(TRAIN_SEEDS) - 1], ignore_index=True)
 test_nf = to_nf(test_df, "test", 400)
-all_nf = pd.concat([train_nf, test_nf], ignore_index=True)
-N_SERIES = len(TRAIN_SEEDS) + 1
+N_SERIES = len(TRAIN_SEEDS)
 
 from neuralforecast import NeuralForecast
 from neuralforecast.models import TimeXer, iTransformer
 
-print(f"\n--- ② ③ NeuralForecast（{N_SERIES} 条序列，训练 {MAX_STEPS} 步）---")
+print(f"\n--- ② ③ NeuralForecast（仅用 {N_SERIES} 条训练序列拟合，严格零泄漏，训练 {MAX_STEPS} 步）---")
 
 
 def run_nf(name, cls, use_hist_exog=False):
@@ -112,11 +116,13 @@ def run_nf(name, cls, use_hist_exog=False):
         if use_hist_exog:
             kw["hist_exog_list"] = EXOG
         nf = NeuralForecast(models=[cls(**kw)], freq="s")
-        nf.fit(df=all_nf)
+        # ✅ 仅在训练集上拟合（绝不包含 test_nf）
+        nf.fit(df=train_nf)
 
         preds, trues, idxs = [], [], []
         for t in range(INPUT_SIZE, len(y_test), TEST_STRIDE):
-            ctx = pd.concat([train_nf, test_nf.iloc[:t]], ignore_index=True)
+            # 保持 n_series=3（前 2 条训练序列 + 截断到当前时刻的 test 序列）
+            ctx = pd.concat([train_ctx_pair, test_nf.iloc[:t]], ignore_index=True)
             fc = nf.predict(df=ctx)
             col = [c for c in fc.columns if c not in ("unique_id", "ds")][0]
             sub = fc[fc["unique_id"] == "test"]

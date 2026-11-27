@@ -1,5 +1,6 @@
 # 启动DSH
 npx @deepseek-ai/dsh@latest web
+npx @deepseek-ai/dsh@0.2.2-rc.1 web
 
 # 虚拟环境
 - 名字：dryer-ts
@@ -31,10 +32,12 @@ git remote add origin https://github.com/DontLookBackIn-Anger/hdt_dryer_mpc.git
 git remote -v
 # 推送至远程仓库并建立上游追踪
 git push -u origin main
+# 强制覆盖远程仓库
+git push -u origin main -f
 
 **后续提交代码**
 cd samples/tsn-distributed-control
 git add .
-git commit -m "aa"
+git commit -m "a"
 git push -u origin main
 ```

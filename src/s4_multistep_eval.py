@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt
 from common import FIG, REP, OUT, COLORS, PALETTE
 from dryer_sim import (simulate_hdt_full, MV_COLS, DV_COLS, PV_COLS, CV_COLS,
                        STATE_CODES, STATE_CN)
-from s3_window_builder import WindowConfig, build_windows, split_by_batch
+from s3_window_builder import WindowConfig, build_windows, split_by_batch, build_split_windows
 
 
 # ================================================================
@@ -247,25 +247,27 @@ def main():
     def log(s=""):
         print(s); lines.append(s)
 
-    # ---- 数据 ----
+    # ---- 数据（严格防泄漏：先按批次切分，仅在训练集拟合 scaler，且增大批次时长避免 p >> n）----
     batches = []
-    for i, seed in enumerate((11, 22, 33, 44)):
-        d = simulate_hdt_full(n_steps=1800, seed=seed)
+    for i, seed in enumerate((11, 22, 33, 44, 55)):
+        d = simulate_hdt_full(n_steps=3600, seed=seed)
         d["batch_id"] = f"B{i+1:02d}"
         batches.append(d)
     df_all = pd.concat(batches, ignore_index=True)
 
-    cfg = WindowConfig(L=120, Np=30, stride=1, require_stable=True)
-    X, Y, meta, scaler, X_seq, info = build_windows(df_all, cfg)
-    b_ids = df_all["batch_id"].values[meta["k"].values]
-    (Xtr, Ytr), (Xva, Yva), (Xte, Yte), split = split_by_batch(X, Y, meta, b_ids)
-    b_te = [b for b, k in zip(b_ids, meta["k"].values) if b in split["test"]]
-    log(f"样本：训练 {len(Xtr)}，测试 {len(Xte)}（批次 {split['test']}）")
+    cfg = WindowConfig(L=120, Np=30, stride=2, require_stable=True)
+    ds = build_split_windows(df_all, cfg, batch_col="batch_id")
+    Xtr, Ytr, _, meta_tr, b_tr = ds["train"]
+    Xva, Yva, _, meta_va, b_va = ds["val"]
+    Xte, Yte, _, meta_te, b_te = ds["test"]
+    scaler, info, split = ds["scaler"], ds["info"], ds["split"]
+    log(f"样本（严格零泄漏）：训练 {len(Xtr)}（批次 {split['train']}），"
+        f"验证 {len(Xva)}（{split['val']}），测试 {len(Xte)}（{split['test']}）")
 
     # ---- 训练一个多输出 LGBM 作为被评估对象 ----
     log("\n训练 LightGBM（每个输出每个步长一个模型）...")
     import lightgbm as lgb
-    n_out, Np = Y.shape[1], Y.shape[2]
+    n_out, Np = Ytr.shape[1], Ytr.shape[2]
     models = {}
     for j in range(n_out):
         for k in range(Np):

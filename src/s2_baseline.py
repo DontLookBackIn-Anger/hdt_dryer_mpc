@@ -75,23 +75,28 @@ def record(name, y_pred, t0, **kw):
 
 
 # ================================================================
-# ① Persistence：直接复制上一步。
-# 这是任何预测模型必须超越的底线。真实工况下，很多"看起来很准"的
-# 深度学习模型其实只是在复现这个基线。
+# ⓪ ① Persistence：复制历史值。
+# ⚠️ 科研基本功——同口径对比（Apples-to-Apples）：
+#   所有模型都在预测未来 H=15 秒（即用 t-H 时刻及以前的信息预测 y[t]）。
+#   - 1步 Persistence（y[t-1] → y[t]）偷看了 t-14..t-1 的未来信息，不是同口径基线！
+#   - H步 Persistence（y[t-H] → y[t]）才是预测 H=15 秒的真正公平下限。
 # ================================================================
-print("\n--- ① ② 简单参照 ---")
+print("\n--- ⓪ ① ② 简单参照（注意同口径 H=15 步对比）---")
 t0 = time.time()
-persist = y_test[START - 1:-1]        # t-1 的值作为 t 的预测
-record("① Persistence(复制上一步)", persist, t0)
+persist_1 = y_test[START - 1:-1]          # 1 步前（非同口径，仅作惯性参考）
+record("⓪ Persistence-1步(非同口径参考)", persist_1, t0)
+
+t0 = time.time()
+persist_h = y_test[START - H:-H]          # H=15 步前（同口径公平下限）
+record(f"① Persistence-{H}步(同口径下限)", persist_h, t0)
 
 # ================================================================
-# ② 24 步滑动均值：用过去 24 秒均值预测下一步。
-# 若它RMSE 很低，说明信号本身平滑、噪声小，任务偏简单。
+# ② 24 步滑动均值（同样严格使用 t-H 之前的数据，保证同口径）
 # ================================================================
 t0 = time.time()
 win = 24
-mov = np.array([y_test[i - win:i].mean() for i in range(START, len(y_test))])
-record("② 24步滑动均值", mov, t0)
+mov = np.array([y_test[i - H - win + 1:i - H + 1].mean() for i in range(START, len(y_test))])
+record(f"② 24步滑动均值(提前{H}步同口径)", mov, t0)
 
 
 # ================================================================
@@ -184,18 +189,23 @@ if len(tbl):
     d = {r["model"]: r for r in rows}
     base = d.get("④ LightGBM(lags=60)")
     exo = d.get("⑤ LightGBM + 外生变量")
-    per = d.get("① Persistence(复制上一步)")
+    per_h = d.get(f"① Persistence-{H}步(同口径下限)")
+    per_1 = d.get("⓪ Persistence-1步(非同口径参考)")
 
     print("\n" + "=" * 78)
-    print("【关键解读】—— 请特别关注这几点")
+    print("【关键解读】—— 请特别关注同口径对比")
     print("=" * 78)
-    if per:
-        print(f"  ① Persistence 下限 RMSE = {per['RMSE']:.5f}")
-        print(f"     含义：哪怕什么都不学，只复制上一步，误差就只有这么大。")
-        print(f"     任何模型都必须显著优于 {per['RMSE']:.4f} 才算有真本事。")
-    if base and per:
-        gain = (per["RMSE"] - base["RMSE"]) / per["RMSE"] * 100
-        print(f"  ④ LightGBM 相比 Persistence 提升 {gain:+.1f}%")
+    if per_1 and per_h:
+        print(f"  ⓪ Persistence-1步 (非同口径) RMSE = {per_1['RMSE']:.5f}")
+        print(f"  ① Persistence-{H}步 (同口径下限) RMSE = {per_h['RMSE']:.5f}")
+        print(f"     ⚠️ 教训：1步基线比{H}步基线低 {per_h['RMSE']/per_1['RMSE']:.1f}×，")
+        print(f"        拿1步基线评判{H}步预测是典型的「口径错配」！")
+    if exo and per_h:
+        gain_exo = (per_h["RMSE"] - exo["RMSE"]) / per_h["RMSE"] * 100
+        print(f"  ⑤ LightGBM+外生 相比同口径 Persistence-{H}步 提升 {gain_exo:+.1f}%")
+    if base and per_h:
+        gain = (per_h["RMSE"] - base["RMSE"]) / per_h["RMSE"] * 100
+        print(f"  ④ LightGBM(纯自回归) 相比同口径 Persistence-{H}步 提升 {gain:+.1f}%")
     if base and exo:
         imp = (base["RMSE"] - exo["RMSE"]) / base["RMSE"] * 100
         print(f"  ⑤ 加入外生变量后相比纯自回归提升 {imp:+.1f}%")

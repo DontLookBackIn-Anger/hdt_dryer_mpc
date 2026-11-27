@@ -46,8 +46,9 @@ import matplotlib.pyplot as plt
 
 from common import FIG, REP, OUT, ROOT, COLORS, PALETTE
 from dryer_sim import simulate_hdt_full, MV_COLS, DV_COLS, PV_COLS, CV_COLS
-from s3_window_builder import WindowConfig, build_windows, split_by_batch
+from s3_window_builder import WindowConfig, build_windows, split_by_batch, build_split_windows
 from s4_multistep_eval import metrics_multi, MultiStepEvaluator
+from s2_delay_identification import simulate_prbs_id_experiment, identify_mimo_fopdt
 
 warnings.filterwarnings("ignore")
 
@@ -251,11 +252,89 @@ def physical_check(predict_fn, feature_names, scaler, L, X_probe, n_out=2):
 
 
 # ================================================================
-# 演示：跑 4 个模型并全部记录
+# 真实物理/辨识 FOPDT-MIMO 解析多步预测器 + 灰箱混合模型（Stage 2 & 3）
+# ================================================================
+class FOPDTMIMOPredictor:
+    """基于 s2 辨识出的 MIMO FOPDT 参数的解析多步预测器。
+
+    特点：
+      - 真正使用 (K_m, K_t, tau_m, tau_t, theta) 递推预测未来 1..Np 步
+      - 采用输出偏置校正（类似 DMC/Offset-free MPC），保证第 1 步平滑衔接当前测量值
+      - 天然保证 100% 物理方向正确、可微分、毫秒级推理
+    """
+
+    def __init__(self, mimo_params: dict, feature_names: list, scaler: dict, L: int, Np: int, dt: float = 1.0):
+        self.p = mimo_params
+        self.feature_names = list(feature_names)
+        self.scaler = scaler
+        self.L = L
+        self.Np = Np
+        self.dt = dt
+        self.u_cols = list(mimo_params["u_cols"])
+        self.u_idx = [self.feature_names.index(c) for c in self.u_cols]
+        self.y_idx = [self.feature_names.index("outlet_moisture"),
+                      self.feature_names.index("outlet_temp")]
+
+    def predict(self, X_flat: np.ndarray) -> np.ndarray:
+        """输入展平标准化窗口 (n, n_feat*L)，返回标准化多步预测 (n, 2, Np)。"""
+        n = len(X_flat)
+        nf = len(self.feature_names)
+        X_seq = X_flat.reshape(n, nf, self.L)
+        # 反标准化出物理量的历史轨迹
+        U_hist = np.zeros((n, 4, self.L), dtype=float)
+        for ch, fi in enumerate(self.u_idx):
+            U_hist[:, ch, :] = X_seq[:, fi, :] * self.scaler["sd"][fi] + self.scaler["mu"][fi] - self.p["u_base"][ch]
+        y_now = np.column_stack([
+            X_seq[:, self.y_idx[0], -1] * self.scaler["sd"][self.y_idx[0]] + self.scaler["mu"][self.y_idx[0]],
+            X_seq[:, self.y_idx[1], -1] * self.scaler["sd"][self.y_idx[1]] + self.scaler["mu"][self.y_idx[1]],
+        ])
+
+        a_m = self.dt / (float(self.p["tau_m"]) + self.dt)
+        a_t = self.dt / (float(self.p["tau_t"]) + self.dt)
+        Km = np.asarray(self.p["K_m"], float)
+        Kt = np.asarray(self.p["K_t"], float)
+        thetas = np.asarray(self.p["theta"], int)
+
+        # 用历史窗口后 60 步推演物理内部状态到当前时刻 k
+        warm = min(self.L - int(thetas.max()) - 1, 80)
+        start_t = self.L - warm
+        xm = np.zeros(n)
+        xt = np.zeros(n)
+        for t in range(start_t, self.L):
+            u_del = np.column_stack([U_hist[:, ch, max(0, t - thetas[ch])] for ch in range(4)])
+            xm = xm + a_m * (u_del @ Km - xm)
+            xt = xt + a_t * (u_del @ Kt - xt)
+
+        # 当前时刻的偏置校正（y_meas(k) - y_phys(k)），用于抵消未测扰动与稳态漂移
+        bias_m = y_now[:, 0] - (float(self.p["y_base"][0]) + xm)
+        bias_t = y_now[:, 1] - (float(self.p["y_base"][1]) + xt)
+
+        # 未来 Np 步递推（未知未来输入按零阶保持：u(k+h) = u(k)）
+        Y_phys = np.zeros((n, 2, self.Np), dtype=float)
+        for h in range(self.Np):
+            # 未来时刻 k+1+h 对应的延迟输入索引 = (L - 1) + (h + 1) - theta
+            u_del = np.column_stack([
+                U_hist[:, ch, min(self.L - 1, max(0, self.L + h - thetas[ch]))]
+                for ch in range(4)
+            ])
+            xm = xm + a_m * (u_del @ Km - xm)
+            xt = xt + a_t * (u_del @ Kt - xt)
+            Y_phys[:, 0, h] = float(self.p["y_base"][0]) + xm + bias_m
+            Y_phys[:, 1, h] = float(self.p["y_base"][1]) + xt + bias_t
+
+        # 回到标准化空间与评估器统一接口
+        Y_std = np.zeros_like(Y_phys)
+        Y_std[:, 0, :] = (Y_phys[:, 0, :] - self.scaler["tmu"][0]) / self.scaler["tsd"][0]
+        Y_std[:, 1, :] = (Y_phys[:, 1, :] - self.scaler["tmu"][1]) / self.scaler["tsd"][1]
+        return Y_std
+
+
+# ================================================================
+# 演示：跑 5 类代表性模型并全部记录（严格无泄漏 + 物理与灰箱对比）
 # ================================================================
 def main():
     print("=" * 76)
-    print("第 5 项：MLflow 实验记录")
+    print("第 5 项：MLflow 实验记录（多范式 + 物理 FOPDT + 灰箱混合模型）")
     print("=" * 76)
     print(f"MLflow tracking URI: {mlflow.get_tracking_uri()}")
     print(f"数据库: {DB_PATH}")
@@ -264,36 +343,70 @@ def main():
     def log(s=""):
         print(s); lines.append(s)
 
-    # ---- 数据 ----
+    # ---- 数据（严格防泄漏：先按批次切分，仅在训练集拟合 scaler）----
     batches = []
-    for i, seed in enumerate((11, 22, 33, 44)):
-        d = simulate_hdt_full(n_steps=1800, seed=seed)
+    for i, seed in enumerate((11, 22, 33, 44, 55)):
+        d = simulate_hdt_full(n_steps=3600, seed=seed)
         d["batch_id"] = f"B{i+1:02d}"
         batches.append(d)
     df_all = pd.concat(batches, ignore_index=True)
 
-    cfg = WindowConfig(L=120, Np=30, stride=1, require_stable=True)
-    X, Y, meta, scaler, X_seq, info = build_windows(df_all, cfg)
-    b_ids = df_all["batch_id"].values[meta["k"].values]
-    (Xtr, Ytr), (Xva, Yva), (Xte, Yte), split = split_by_batch(X, Y, meta, b_ids)
-    b_te = [b for b, b_ in zip(b_ids, meta["k"].values) if b_ in split["test"]]
-    log(f"样本: 训练 {len(Xtr)} / 测试 {len(Xte)}")
+    cfg = WindowConfig(L=120, Np=30, stride=2, require_stable=True)
+    ds = build_split_windows(df_all, cfg, batch_col="batch_id")
+    Xtr, Ytr, _, meta_tr, b_tr = ds["train"]
+    Xva, Yva, _, meta_va, b_va = ds["val"]
+    Xte, Yte, _, meta_te, b_te = ds["test"]
+    scaler, info, split = ds["scaler"], ds["info"], ds["split"]
+    log(f"样本（严格零泄漏）: 训练 {len(Xtr)} ({split['train']}) / "
+        f"验证 {len(Xva)} ({split['val']}) / 测试 {len(Xte)} ({split['test']})")
 
     data_info = dict(
         n_rows=len(df_all), n_batches=df_all["batch_id"].nunique(),
-        n_samples=len(X), n_features=X.shape[1],
+        n_samples=len(Xtr) + len(Xva) + len(Xte), n_features=Xtr.shape[1],
         train_batches=",".join(split["train"]),
+        val_batches=",".join(split["val"]),
         test_batches=",".join(split["test"]),
     )
     ev = MultiStepEvaluator(scaler)
-    n_out, Np = Y.shape[1], Y.shape[2]
+    n_out, Np = Ytr.shape[1], Ytr.shape[2]
     results = []
 
-    # ---- 模型 1: Ridge（线性基线）----
+    def _bench_us(fn, Xq, repeats=15):
+        ts = []
+        for _ in range(repeats):
+            t1 = time.perf_counter(); fn(Xq); ts.append(time.perf_counter() - t1)
+        return float(np.median(ts)) / len(Xq) * 1e6
+
+    # ---- 模型 1: 同口径多步 Persistence（下限）----
+    log("\n[1/5] Persistence-MultiStep（同口径多步下限）")
+    nf = len(info["feature_names"])
+    yi0 = info["feature_names"].index("outlet_moisture")
+    yi1 = info["feature_names"].index("outlet_temp")
+
+    def persist_predict(Xq):
+        xs = Xq.reshape(len(Xq), nf, cfg.L)
+        out = np.zeros((len(Xq), n_out, Np))
+        out[:, 0, :] = xs[:, yi0, -1:]
+        out[:, 1, :] = xs[:, yi1, -1:]
+        return out
+
+    pred_p = persist_predict(Xte)
+    res_p = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="Persistence-Multi", y_pred=pred_p)
+    infer_p = _bench_us(persist_predict, Xte)
+    phys_p = physical_check(persist_predict, info["feature_names"], scaler, cfg.L, Xte)
+    with ExperimentLogger("Persistence-Multi", cfg, data_info) as lg:
+        lg.log_metrics({"overall": {o: res_p["overall"][o] for o in CV_COLS}})
+        lg.log_per_step(res_p["per_step"])
+        lg.log_metrics({"overall.infer_us_per_sample": infer_p})
+        lg.log_physical(phys_p)
+    results.append(("Persistence", res_p, pred_p))
+    log(f"  水分 RMSE={res_p['overall']['outlet_moisture']['RMSE']:.5f}  推理 {infer_p:.1f} μs")
+
+    # ---- 模型 2: Ridge（线性 Direct 多步）----
     from sklearn.linear_model import Ridge
-    log("\n[1/4] Ridge 线性基线")
+    log("\n[2/5] Ridge-Direct 线性基线")
     t0 = time.time()
-    ridge_models = {(j, k): Ridge(alpha=10.0).fit(Xtr, Ytr[:, j, k])
+    ridge_models = {(j, k): Ridge(alpha=50.0).fit(Xtr, Ytr[:, j, k])
                     for j in range(n_out) for k in range(Np)}
 
     class RidgeEns:
@@ -303,105 +416,112 @@ def main():
                 out[:, j, k] = m.predict(Xq)
             return out
 
-    pred_r = RidgeEns().predict(Xte)
-    res_r = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="Ridge", y_pred=pred_r)
-    phys_r = physical_check(lambda q: RidgeEns().predict(q), info["feature_names"], scaler, cfg.L, Xte)
-    with ExperimentLogger("Ridge", cfg, data_info) as lg:
+    rens = RidgeEns()
+    pred_r = rens.predict(Xte)
+    res_r = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="Ridge-Direct", y_pred=pred_r)
+    infer_r = _bench_us(rens.predict, Xte)
+    phys_r = physical_check(rens.predict, info["feature_names"], scaler, cfg.L, Xte)
+    with ExperimentLogger("Ridge-Direct", cfg, data_info) as lg:
         lg.log_metrics({"overall": {o: res_r["overall"][o] for o in CV_COLS}})
         lg.log_per_step(res_r["per_step"])
-        lg.log_metrics({"alpha": 10.0, "train_sec": time.time() - t0})
+        lg.log_metrics({"overall.infer_us_per_sample": infer_r,
+                        "alpha": 50.0, "train_sec": time.time() - t0})
         lg.log_physical(phys_r)
-    results.append(("Ridge", res_r, pred_r))
-    log(f"  水分 RMSE={res_r['overall']['outlet_moisture']['RMSE']:.5f}")
+    results.append(("Ridge-Direct", res_r, pred_r))
+    log(f"  水分 RMSE={res_r['overall']['outlet_moisture']['RMSE']:.5f}  推理 {infer_r:.1f} μs")
 
-    # ---- 模型 2/3: LightGBM 不同深度 ----
+    # ---- 模型 3: LightGBM-Direct（非线性树多步）----
     import lightgbm as lgb
-    for tag, depth, n_est in [("LightGBM-d3", 3, 100), ("LightGBM-d5", 5, 200)]:
-        log(f"\n[2/4] {tag} (max_depth={depth}, n_est={n_est})")
-        t0 = time.time()
-        models = {}
-        for j in range(n_out):
-            for k in range(Np):
-                m = lgb.LGBMRegressor(n_estimators=n_est, max_depth=depth,
-                                      learning_rate=0.08, verbose=-1, random_state=0)
-                m.fit(Xtr, Ytr[:, j, k])
-                models[(j, k)] = m
-
-        class Ens:
-            def predict(self, Xq):
-                out = np.zeros((len(Xq), n_out, Np))
-                for (j, k), m in models.items():
-                    out[:, j, k] = m.predict(Xq)
-                return out
-
-        ens = Ens()
-        pred = ens.predict(Xte)
-        res = ev.evaluate(Y=Yte, batch_ids=b_te, model_name=tag, y_pred=pred)
-        # 推理计时
-        ts = []
-        for _ in range(15):
-            t1 = time.perf_counter(); ens.predict(Xte); ts.append(time.perf_counter() - t1)
-        infer_us = float(np.median(ts)) / len(Xte) * 1e6
-
-        with ExperimentLogger(tag, cfg, data_info) as lg:
-            lg.log_metrics({"overall": {o: res["overall"][o] for o in CV_COLS}})
-            lg.log_per_step(res["per_step"])
-            lg.log_metrics({"overall.infer_us_per_sample": infer_us,
-                            "max_depth": depth, "n_estimators": n_est,
-                            "train_sec": time.time() - t0})
-            phys = physical_check(lambda q: Ens().predict(q), info["feature_names"], scaler, cfg.L, Xte)
-            lg.log_physical(phys)
-            lg.log_model(models)
-        results.append((tag, res, pred))
-        log(f"  水分 RMSE={res['overall']['outlet_moisture']['RMSE']:.5f}  "
-            f"推理 {infer_us:.1f} μs")
-
-    # ---- 模型 4: FOPDT 解析模型（MPC 用的那种）----
-    log("\n[4/4] FOPDT 解析模型（1 阶惯性 + 纯滞后，可解析多步）")
-
-    from scipy.optimize import curve_fit
-
-    def fit_fopdt_multi(Xtr_f, Ytr_f, j, k):
-        """在窗口上拟合一个线性 FOPDT 的稳态增益（简化版：只用均值差）"""
-        # 用最小二乘直接拟合"窗口均值 -> 未来值"的线性关系
-        w_mean = Xtr_f.reshape(len(Xtr_f), -1)
-        A = w_mean
-        b = Ytr_f[:, j, k]
-        coef, *_ = np.linalg.lstsq(A, b, rcond=None)
-        return coef
-
+    log("\n[3/5] LightGBM-Direct (max_depth=4, n_est=150)")
     t0 = time.time()
-    fopdt_coefs = {}
+    models = {}
     for j in range(n_out):
         for k in range(Np):
-            fopdt_coefs[(j, k)] = fit_fopdt_multi(Xtr, Ytr, j, k)
+            m = lgb.LGBMRegressor(n_estimators=150, max_depth=4,
+                                  learning_rate=0.06, verbose=-1, random_state=0)
+            m.fit(Xtr, Ytr[:, j, k])
+            models[(j, k)] = m
 
-    class FOPDTEns:
+    class LGBMEns:
         def predict(self, Xq):
             out = np.zeros((len(Xq), n_out, Np))
-            for (j, k), c in fopdt_coefs.items():
-                out[:, j, k] = Xq @ c
+            for (j, k), m in models.items():
+                out[:, j, k] = m.predict(Xq)
             return out
 
-    fens = FOPDTEns()
-    pred_f = fens.predict(Xte)
-    res_f = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="FOPDT-linear", y_pred=pred_f)
-    ts = []
-    for _ in range(15):
-        t1 = time.perf_counter(); fens.predict(Xte); ts.append(time.perf_counter() - t1)
-    infer_f = float(np.median(ts)) / len(Xte) * 1e6
+    lens = LGBMEns()
+    pred_l = lens.predict(Xte)
+    res_l = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="LightGBM-Direct", y_pred=pred_l)
+    infer_l = _bench_us(lens.predict, Xte)
+    phys_l = physical_check(lens.predict, info["feature_names"], scaler, cfg.L, Xte)
+    with ExperimentLogger("LightGBM-Direct", cfg, data_info) as lg:
+        lg.log_metrics({"overall": {o: res_l["overall"][o] for o in CV_COLS}})
+        lg.log_per_step(res_l["per_step"])
+        lg.log_metrics({"overall.infer_us_per_sample": infer_l,
+                        "max_depth": 4, "n_estimators": 150,
+                        "train_sec": time.time() - t0})
+        lg.log_physical(phys_l)
+        lg.log_model(models)
+    results.append(("LightGBM-Direct", res_l, pred_l))
+    log(f"  水分 RMSE={res_l['overall']['outlet_moisture']['RMSE']:.5f}  推理 {infer_l:.1f} μs")
 
-    with ExperimentLogger("FOPDT-linear", cfg, data_info) as lg:
+    # ---- 模型 4: 真实辨识 FOPDT-MIMO 解析多步模型 ----
+    log("\n[4/5] FOPDT-MIMO 解析模型（加载 s2 辨识参数，物理递推多步）")
+    t0 = time.time()
+    mimo_path = OUT / "identified_mimo_model.npz"
+    if mimo_path.exists():
+        z = np.load(mimo_path, allow_pickle=True)
+        mimo_params = {k: z[k] for k in z.files}
+        mimo_params["u_cols"] = [str(x) for x in mimo_params["u_cols"]]
+    else:
+        mimo_params = identify_mimo_fopdt(simulate_prbs_id_experiment(2400, seed=123), dt=1.0)
+
+    fopdt_pred = FOPDTMIMOPredictor(mimo_params, info["feature_names"], scaler, cfg.L, Np)
+    pred_f = fopdt_pred.predict(Xte)
+    res_f = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="FOPDT-MIMO", y_pred=pred_f)
+    infer_f = _bench_us(fopdt_pred.predict, Xte)
+    phys_f = physical_check(fopdt_pred.predict, info["feature_names"], scaler, cfg.L, Xte)
+    with ExperimentLogger("FOPDT-MIMO", cfg, data_info) as lg:
         lg.log_metrics({"overall": {o: res_f["overall"][o] for o in CV_COLS}})
         lg.log_per_step(res_f["per_step"])
         lg.log_metrics({"overall.infer_us_per_sample": infer_f,
                         "train_sec": time.time() - t0})
-        phys_f = physical_check(lambda q: FOPDTEns().predict(q), info["feature_names"], scaler, cfg.L, Xte)
         lg.log_physical(phys_f)
         lg.set_tag("mpc_friendly", "true")
-    results.append(("FOPDT-linear", res_f, pred_f))
-    log(f"  水分 RMSE={res_f['overall']['outlet_moisture']['RMSE']:.5f}  "
-        f"推理 {infer_f:.1f} μs")
+    results.append(("FOPDT-MIMO", res_f, pred_f))
+    log(f"  水分 RMSE={res_f['overall']['outlet_moisture']['RMSE']:.5f}  推理 {infer_f:.1f} μs")
+
+    # ---- 模型 5: 灰箱混合模型（Hybrid Gray-Box: FOPDT-MIMO + Ridge 残差学习）----
+    log("\n[5/5] Hybrid-GrayBox 灰箱混合模型（物理 FOPDT + 正则残差补偿）")
+    t0 = time.time()
+    Ytr_phys = fopdt_pred.predict(Xtr)
+    Etr = Ytr - Ytr_phys
+    # 强正则（alpha=500）只学残差中的系统性非线性偏差，不破坏物理主通道方向
+    res_models = {(j, k): Ridge(alpha=500.0).fit(Xtr, Etr[:, j, k])
+                  for j in range(n_out) for k in range(Np)}
+
+    class HybridGrayBox:
+        def predict(self, Xq):
+            base = fopdt_pred.predict(Xq)
+            corr = np.zeros_like(base)
+            for (j, k), m in res_models.items():
+                corr[:, j, k] = m.predict(Xq)
+            return base + corr
+
+    hens = HybridGrayBox()
+    pred_h = hens.predict(Xte)
+    res_h = ev.evaluate(Y=Yte, batch_ids=b_te, model_name="Hybrid-GrayBox", y_pred=pred_h)
+    infer_h = _bench_us(hens.predict, Xte)
+    phys_h = physical_check(hens.predict, info["feature_names"], scaler, cfg.L, Xte)
+    with ExperimentLogger("Hybrid-GrayBox", cfg, data_info) as lg:
+        lg.log_metrics({"overall": {o: res_h["overall"][o] for o in CV_COLS}})
+        lg.log_per_step(res_h["per_step"])
+        lg.log_metrics({"overall.infer_us_per_sample": infer_h,
+                        "resid_alpha": 500.0, "train_sec": time.time() - t0})
+        lg.log_physical(phys_h)
+        lg.set_tag("hybrid_graybox", "true")
+    results.append(("Hybrid-GrayBox", res_h, pred_h))
+    log(f"  水分 RMSE={res_h['overall']['outlet_moisture']['RMSE']:.5f}  推理 {infer_h:.1f} μs")
 
     # ---- 对比 ----
     log("\n" + "=" * 76)

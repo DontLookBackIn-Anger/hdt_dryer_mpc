@@ -175,15 +175,113 @@ def build_windows(df: pd.DataFrame, cfg: WindowConfig | None = None,
 
 
 # ================================================================
-# 批次级划分（报告 7.1）
+# 批次级划分（报告 7.1）+ 严格无泄漏构造流程
 # ================================================================
-def split_by_batch(X, Y, meta, batch_ids, train_ratio=0.7, val_ratio=0.15):
-    """按批次划分训练/验证/测试。
+def split_df_by_batch(df: pd.DataFrame, batch_col: str = "batch_id",
+                      train_ratio: float = 0.7, val_ratio: float = 0.15):
+    """先按批次切分原始 DataFrame，再分别构窗，彻底杜绝 scaler 统计量泄漏！
 
-    报告 7.1："优先采用较早批次训练、后续批次验证/测试"。
-    **绝不能随机打乱时间序列**，否则相邻点同时出现在训练和测试里，
-    指标会虚高得离谱。
+    科研基本功：
+        错误顺序：全量数据 build_windows(fit scaler) -> split_by_batch
+        正确顺序：先按批次 split_df_by_batch -> 训练集 fit scaler -> 验证/测试集只 transform
     """
+    uniq = sorted(df[batch_col].unique())
+    n_b = len(uniq)
+    if n_b < 3:
+        raise ValueError(f"至少需要 3 个批次才能做 train/val/test 批次级划分，当前仅 {n_b} 个")
+    n_tr = max(1, int(round(n_b * train_ratio)))
+    n_va = max(1, int(round(n_b * val_ratio)))
+    if n_tr + n_va >= n_b:
+        n_va = 1
+        n_tr = n_b - 2
+    tr_b = uniq[:n_tr]
+    va_b = uniq[n_tr:n_tr + n_va]
+    te_b = uniq[n_tr + n_va:]
+    assert not (set(tr_b) & set(va_b)) and not (set(tr_b) & set(te_b)) and not (set(va_b) & set(te_b))
+    df_tr = df[df[batch_col].isin(tr_b)].reset_index(drop=True)
+    df_va = df[df[batch_col].isin(va_b)].reset_index(drop=True)
+    df_te = df[df[batch_col].isin(te_b)].reset_index(drop=True)
+    return df_tr, df_va, df_te, dict(train=tr_b, val=va_b, test=te_b)
+
+
+def build_split_windows(df: pd.DataFrame, cfg: WindowConfig | None = None,
+                        batch_col: str = "batch_id",
+                        train_ratio: float = 0.7, val_ratio: float = 0.15):
+    """严格无泄漏的端到端样本构造器（推荐所有下游脚本统一调用）：
+      1. 按 batch_id 严格划分 train / val / test（且绝不跨批次拼接窗口）
+      2. 仅在训练集上拟合标准化参数 scaler
+      3. 逐批次构窗，杜绝跨批次时间拼接造成的假连续窗口
+    """
+    cfg = cfg or WindowConfig()
+    df_tr, df_va, df_te, split = split_df_by_batch(df, batch_col, train_ratio, val_ratio)
+
+    # 仅在训练集有效行上拟合 scaler（绝不看验证集和测试集！）
+    in_cols = []
+    if cfg.use_mv: in_cols += MV_COLS
+    if cfg.use_dv: in_cols += DV_COLS
+    if cfg.use_pv: in_cols += PV_COLS
+    if cfg.use_y_history: in_cols += CV_COLS
+
+    ok_tr = pd.Series(True, index=df_tr.index)
+    if cfg.require_stable:
+        ok_tr &= df_tr["machine_state"] == STATE_CODES["stable"]
+    for q in cfg.drop_quality:
+        ok_tr &= df_tr["quality_flag"] != q
+    ok_tr &= df_tr[in_cols + CV_COLS].notna().all(axis=1)
+
+    if cfg.standardize:
+        scaler = dict(
+            mu=df_tr.loc[ok_tr, in_cols].mean().values,
+            sd=df_tr.loc[ok_tr, in_cols].std().replace(0, 1).values,
+            tmu=df_tr.loc[ok_tr, CV_COLS].mean().values,
+            tsd=df_tr.loc[ok_tr, CV_COLS].std().replace(0, 1).values,
+            cols=in_cols,
+        )
+    else:
+        scaler = dict(
+            mu=np.zeros(len(in_cols)), sd=np.ones(len(in_cols)),
+            tmu=np.zeros(len(CV_COLS)), tsd=np.ones(len(CV_COLS)),
+            cols=in_cols,
+        )
+
+    def _build_per_batch(sub_df):
+        Xs, Ys, Xseqs, metas, bids = [], [], [], [], []
+        info_out = None
+        for bid, grp in sub_df.groupby(batch_col, sort=True):
+            grp = grp.reset_index(drop=True)
+            try:
+                xf, yf, mf, _, xseq, inf = build_windows(grp, cfg, scaler=scaler, return_info=True)
+            except RuntimeError:
+                continue
+            mf["batch_id"] = bid
+            Xs.append(xf); Ys.append(yf); Xseqs.append(xseq); metas.append(mf)
+            bids.extend([bid] * len(xf))
+            info_out = inf
+        if not Xs:
+            raise RuntimeError("该切分下无有效窗口样本，请增大单批次长度或放宽过滤条件。")
+        return (np.concatenate(Xs, axis=0),
+                np.concatenate(Ys, axis=0),
+                np.concatenate(Xseqs, axis=0),
+                pd.concat(metas, ignore_index=True),
+                bids,
+                info_out)
+
+    Xtr, Ytr, Xtr_seq, meta_tr, b_tr, info = _build_per_batch(df_tr)
+    Xva, Yva, Xva_seq, meta_va, b_va, _ = _build_per_batch(df_va)
+    Xte, Yte, Xte_seq, meta_te, b_te, _ = _build_per_batch(df_te)
+
+    return {
+        "train": (Xtr, Ytr, Xtr_seq, meta_tr, b_tr),
+        "val": (Xva, Yva, Xva_seq, meta_va, b_va),
+        "test": (Xte, Yte, Xte_seq, meta_te, b_te),
+        "scaler": scaler,
+        "info": info,
+        "split": split,
+    }
+
+
+def split_by_batch(X, Y, meta, batch_ids, train_ratio=0.7, val_ratio=0.15):
+    """按批次划分训练/验证/测试（保留向后兼容；新代码请优先使用 build_split_windows）。"""
     uniq = sorted(set(batch_ids))
     n_b = len(uniq)
     if n_b < 3:
@@ -226,10 +324,10 @@ def main():
     def log(s=""):
         print(s); lines.append(s)
 
-    # 生成 3 个批次模拟不同生产日
+    # 生成 5 个 1 小时批次（3600s/批）模拟不同生产日，保证足够的有效稳态样本量（避免 p >> n）
     batches = []
-    for i, seed in enumerate((11, 22, 33, 44)):
-        d = simulate_hdt_full(n_steps=1800, seed=seed)
+    for i, seed in enumerate((11, 22, 33, 44, 55)):
+        d = simulate_hdt_full(n_steps=3600, seed=seed)
         d["batch_id"] = f"B{i+1:02d}"
         batches.append(d)
     df_all = pd.concat(batches, ignore_index=True)
@@ -239,40 +337,47 @@ def main():
     qs = data_quality_summary(df_all)
     log(qs.to_string(index=False))
 
-    # ---- 构造窗口 ----
+    # ---- 严格无泄漏构造：先按批次划分 -> 仅在训练集拟合 scaler -> 逐批构窗 ----
     cfg = WindowConfig(L=120, Np=30, stride=1, require_stable=True)
     log(f"\n窗口配置：L={cfg.L}s (回看), Np={cfg.Np}s (预测), stride={cfg.stride}")
     log(f"          输入: MV={cfg.use_mv}, DV={cfg.use_dv}, PV={cfg.use_pv}, "
         f"y历史={cfg.use_y_history}")
+    log("          ✅ 严格防泄漏：先按批次切分，仅在训练集 fit scaler，逐批构窗（不跨批次拼接）")
 
-    X, Y, meta, scaler, X_seq, info = build_windows(df_all, cfg)
+    ds = build_split_windows(df_all, cfg, batch_col="batch_id")
+    Xtr, Ytr, Xtr_seq, meta_tr, b_tr = ds["train"]
+    Xva, Yva, Xva_seq, meta_va, b_va = ds["val"]
+    Xte, Yte, Xte_seq, meta_te, b_te = ds["test"]
+    scaler, info, split = ds["scaler"], ds["info"], ds["split"]
+
+    X = np.concatenate([Xtr, Xva, Xte], axis=0)
+    Y = np.concatenate([Ytr, Yva, Yte], axis=0)
+    X_seq = np.concatenate([Xtr_seq, Xva_seq, Xte_seq], axis=0)
+
     log(f"\n构造结果：")
-    log(f"  X (展平)  : {X.shape}      ← 给树模型")
+    log(f"  X (展平)  : {X.shape}      ← 给树模型（训练 {len(Xtr)} / 验证 {len(Xva)} / 测试 {len(Xte)}）")
     log(f"  X_seq     : {X_seq.shape}  ← 给 TCN/Transformer")
     log(f"  Y         : {Y.shape}      ← (样本, 双输出, Np)")
     log(f"  特征名     : {info['feature_names']}")
     log(f"  输出名     : {info['out_names']}")
 
     # ---- 检查标签对齐（关键验证）----
-    log("\n【对齐验证】检查样本 0 的标签是否确实对应未来的真值")
-    s0 = meta.iloc[0]
+    log("\n【对齐验证】检查训练样本 0 的标签是否确实对应未来的真值")
+    s0 = meta_tr.iloc[0]
     k = int(s0["k"])
-    # 标签是 outlet_moisture 的标准化值，反标准化后对比
-    y0_std = Y[0, 0, :]                                  # 第 0 个样本的水分标签
+    b0 = s0["batch_id"]
+    df_b0 = df_all[df_all["batch_id"] == b0].reset_index(drop=True)
+    y0_std = Ytr[0, 0, :]
     y0_real = y0_std * scaler["tsd"][0] + scaler["tmu"][0]
-    actual = df_all["outlet_moisture"].values[k + 1:k + 1 + cfg.Np]
+    actual = df_b0["outlet_moisture"].values[k + 1:k + 1 + cfg.Np]
     err = np.abs(y0_real - actual).max()
-    log(f"  样本起点 k={k}（{s0['ds']}）")
+    log(f"  样本起点 batch={b0}, k={k}（{s0['ds']}）")
     log(f"  标签反标准化后 vs 原始数据 最大差 = {err:.6f}")
     log(f"  {'✅ 对齐正确' if err < 1e-6 else '❌ 对齐错误！'}")
-    log(f"  历史末尾 y[k] 应在窗口内：X_seq 最后一行包含 y 在索引 {info['n_features']-2} 和 {info['n_features']-1}")
+    log(f"  历史末尾 y[k] 应在窗口内：X_seq 最后两通道为 CV（索引 {info['n_features']-2}, {info['n_features']-1}）")
 
-    # ---- 批次划分 ----
-    # ⚠️ 坑：4 个批次的时间戳完全相同，不能用 timestamp 反查 batch_id
-    # （会永远返回第一条）。应直接用行索引映射。
-    batch_ids = df_all["batch_id"].values[meta["k"].values]
-    (Xtr, Ytr), (Xva, Yva), (Xte, Yte), split = split_by_batch(X, Y, meta, batch_ids)
-    log(f"\n【批次级划分】（报告 7.1：禁止随机打乱）")
+    # ---- 批次划分汇总 ----
+    log(f"\n【批次级划分】（报告 7.1：禁止随机打乱，scaler 仅在训练集拟合）")
     log(f"  训练: {Xtr.shape[0]:6d} 样本  批次 {split['train']}")
     log(f"  验证: {Xva.shape[0]:6d} 样本  批次 {split['val']}")
     log(f"  测试: {Xte.shape[0]:6d} 样本  批次 {split['test']}")
