@@ -3,6 +3,7 @@ data/processed/
 checkpoints/
 outputs/
 lightning_logs/
+docs/
 mlflow/
 mlruns/
 __pycache__/
