@@ -1,0 +1,7 @@
+﻿scenario,controller,moist_rmse,moist_mae,temp_rmse,temp_mae,steam_tv
+1_Setpoint_Tracking,PID,0.1394,0.1143,0.3564,0.2791,0.0491
+1_Setpoint_Tracking,Real_MPC,0.0879,0.0552,0.2741,0.1817,0.2001
+2_Real_1B_Disturbance,PID,0.0323,0.0261,0.089,0.0776,0.0454
+2_Real_1B_Disturbance,Real_MPC,0.016,0.0128,0.0737,0.0592,0.126
+3_Plant_Model_Mismatch,PID,0.1436,0.1077,0.3621,0.3256,0.0503
+3_Plant_Model_Mismatch,Real_MPC,0.0988,0.0705,0.3733,0.2567,0.2469

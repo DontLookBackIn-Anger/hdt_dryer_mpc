@@ -1,0 +1,92 @@
+==================================================================================
+真实数据脚本 4D：1A.csv / 1B.csv（2025-01-26）跨日期零样本外部泛化测试
+（所有模型仅在 2025-03 12 批次上训练并冻结，零微调直接推理 1 月外部批次）
+==================================================================================
+
+>>> 外部批次 1A (2025-01-26 连续稳态 3280s, 逐秒测试窗口 3161 个)
+    稳态统计: 出口含水率 μ=20.7388%(σ=0.0310%), 出口温度 μ=49.607℃(σ=0.257℃), 估算加料流量 μ=201.6 kg/h
+    dataset                      model          target  horizon_s    rmse     mae      r2  skill_vs_naive_pct
+1A_20250126                      Naive outlet_moisture          1 0.00340 0.00115  0.9883                0.00
+1A_20250126                      Naive     outlet_temp          1 0.04244 0.03360  0.9718                0.00
+1A_20250126                      Naive outlet_moisture         15 0.01772 0.01396  0.6829                0.00
+1A_20250126                      Naive     outlet_temp         15 0.25052 0.20003  0.0108                0.00
+1A_20250126                      Naive outlet_moisture         30 0.02693 0.02152  0.2672                0.00
+1A_20250126                      Naive     outlet_temp         30 0.27923 0.22341 -0.2229                0.00
+1A_20250126                      Naive outlet_moisture         60 0.03653 0.02892 -0.3528                0.00
+1A_20250126                      Naive     outlet_temp         60 0.28884 0.23052 -0.2901                0.00
+1A_20250126               DLinear_Phys outlet_moisture          1 0.00361 0.00208  0.9868               -6.24
+1A_20250126               DLinear_Phys     outlet_temp          1 0.03579 0.02853  0.9799               15.67
+1A_20250126               DLinear_Phys outlet_moisture         15 0.01850 0.01484  0.6547               -4.36
+1A_20250126               DLinear_Phys     outlet_temp         15 0.21415 0.16891  0.2772               14.52
+1A_20250126               DLinear_Phys outlet_moisture         30 0.02817 0.02280  0.1981               -4.61
+1A_20250126               DLinear_Phys     outlet_temp         30 0.22895 0.18149  0.1779               18.01
+1A_20250126               DLinear_Phys outlet_moisture         60 0.03555 0.02867 -0.2811                2.68
+1A_20250126               DLinear_Phys     outlet_temp         60 0.24255 0.19342  0.0903               16.03
+1A_20250126                   GRU_Phys outlet_moisture          1 0.00365 0.00216  0.9866               -7.29
+1A_20250126                   GRU_Phys     outlet_temp          1 0.03542 0.02808  0.9803               16.55
+1A_20250126                   GRU_Phys outlet_moisture         15 0.01910 0.01531  0.6318               -7.76
+1A_20250126                   GRU_Phys     outlet_temp         15 0.21953 0.17403  0.2404               12.37
+1A_20250126                   GRU_Phys outlet_moisture         30 0.03008 0.02417  0.0859              -11.69
+1A_20250126                   GRU_Phys     outlet_temp         30 0.23514 0.18652  0.1327               15.79
+1A_20250126                   GRU_Phys outlet_moisture         60 0.04157 0.03272 -0.7517              -13.79
+1A_20250126                   GRU_Phys     outlet_temp         60 0.24252 0.19350  0.0905               16.04
+1A_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture          1 0.00349 0.00193  0.9877               -2.57
+1A_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp          1 0.04207 0.03345  0.9723                0.88
+1A_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture         15 0.01798 0.01450  0.6736               -1.46
+1A_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp         15 0.21625 0.17199  0.2630               13.68
+1A_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture         30 0.02830 0.02278  0.1911               -5.07
+1A_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp         30 0.23185 0.18448  0.1569               16.97
+1A_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture         60 0.03802 0.03013 -0.4656               -4.09
+1A_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp         60 0.24633 0.19669  0.0617               14.72
+1A_20250126              Ensemble_Phys outlet_moisture          1 0.00355 0.00199  0.9873               -4.52
+1A_20250126              Ensemble_Phys     outlet_temp          1 0.03628 0.02880  0.9794               14.52
+1A_20250126              Ensemble_Phys outlet_moisture         15 0.01797 0.01442  0.6741               -1.38
+1A_20250126              Ensemble_Phys     outlet_temp         15 0.21355 0.16893  0.2812               14.76
+1A_20250126              Ensemble_Phys outlet_moisture         30 0.02801 0.02260  0.2076               -3.99
+1A_20250126              Ensemble_Phys     outlet_temp         30 0.22777 0.18117  0.1863               18.43
+1A_20250126              Ensemble_Phys outlet_moisture         60 0.03699 0.02929 -0.3874               -1.27
+1A_20250126              Ensemble_Phys     outlet_temp         60 0.23863 0.19108  0.1194               17.38
+
+>>> 外部批次 1B (2025-01-26 连续稳态 1490s, 逐秒测试窗口 1371 个)
+    稳态统计: 出口含水率 μ=20.8272%(σ=0.0609%), 出口温度 μ=49.000℃(σ=0.389℃), 估算加料流量 μ=229.9 kg/h
+    dataset                      model          target  horizon_s    rmse     mae      r2  skill_vs_naive_pct
+1B_20250126                      Naive outlet_moisture          1 0.00358 0.00128  0.9946                0.00
+1B_20250126                      Naive     outlet_temp          1 0.04588 0.03671  0.9855                0.00
+1B_20250126                      Naive outlet_moisture         15 0.01968 0.01559  0.8171                0.00
+1B_20250126                      Naive     outlet_temp         15 0.23525 0.18659  0.6288                0.00
+1B_20250126                      Naive outlet_moisture         30 0.02979 0.02396  0.5185                0.00
+1B_20250126                      Naive     outlet_temp         30 0.25823 0.20577  0.5543                0.00
+1B_20250126                      Naive outlet_moisture         60 0.04213 0.03406 -0.2002                0.00
+1B_20250126                      Naive     outlet_temp         60 0.29035 0.23058  0.4337                0.00
+1B_20250126               DLinear_Phys outlet_moisture          1 0.00374 0.00223  0.9941               -4.48
+1B_20250126               DLinear_Phys     outlet_temp          1 0.04116 0.03296  0.9883               10.29
+1B_20250126               DLinear_Phys outlet_moisture         15 0.02020 0.01613  0.8071               -2.68
+1B_20250126               DLinear_Phys     outlet_temp         15 0.22717 0.17853  0.6539                3.43
+1B_20250126               DLinear_Phys outlet_moisture         30 0.02993 0.02389  0.5141               -0.46
+1B_20250126               DLinear_Phys     outlet_temp         30 0.26313 0.20596  0.5372               -1.90
+1B_20250126               DLinear_Phys outlet_moisture         60 0.03862 0.03113 -0.0087                8.33
+1B_20250126               DLinear_Phys     outlet_temp         60 0.27683 0.22094  0.4852                4.66
+1B_20250126                   GRU_Phys outlet_moisture          1 0.00380 0.00247  0.9939               -6.14
+1B_20250126                   GRU_Phys     outlet_temp          1 0.04074 0.03291  0.9886               11.19
+1B_20250126                   GRU_Phys outlet_moisture         15 0.02246 0.01738  0.7616              -14.15
+1B_20250126                   GRU_Phys     outlet_temp         15 0.24085 0.19169  0.6109               -2.38
+1B_20250126                   GRU_Phys outlet_moisture         30 0.03709 0.02989  0.2538              -24.50
+1B_20250126                   GRU_Phys     outlet_temp         30 0.27862 0.22406  0.4811               -7.90
+1B_20250126                   GRU_Phys outlet_moisture         60 0.05658 0.04530 -1.1649              -34.30
+1B_20250126                   GRU_Phys     outlet_temp         60 0.30196 0.24497  0.3875               -4.00
+1B_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture          1 0.00358 0.00196  0.9946                0.01
+1B_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp          1 0.04561 0.03667  0.9857                0.58
+1B_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture         15 0.01977 0.01554  0.8153               -0.48
+1B_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp         15 0.21797 0.17342  0.6813                7.34
+1B_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture         30 0.02936 0.02350  0.5324                1.45
+1B_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp         30 0.24497 0.19550  0.5989                5.13
+1B_20250126 Patch_TCN_SKNet_Trans_Phys outlet_moisture         60 0.04094 0.03250 -0.1334                2.82
+1B_20250126 Patch_TCN_SKNet_Trans_Phys     outlet_temp         60 0.27663 0.22253  0.4859                4.72
+1B_20250126              Ensemble_Phys outlet_moisture          1 0.00364 0.00211  0.9944               -1.72
+1B_20250126              Ensemble_Phys     outlet_temp          1 0.04085 0.03286  0.9885               10.95
+1B_20250126              Ensemble_Phys outlet_moisture         15 0.01944 0.01519  0.8214                1.19
+1B_20250126              Ensemble_Phys     outlet_temp         15 0.22039 0.17505  0.6742                6.32
+1B_20250126              Ensemble_Phys outlet_moisture         30 0.02968 0.02375  0.5220                0.36
+1B_20250126              Ensemble_Phys     outlet_temp         30 0.24955 0.19791  0.5837                3.36
+1B_20250126              Ensemble_Phys outlet_moisture         60 0.04148 0.03211 -0.1633                1.55
+1B_20250126              Ensemble_Phys     outlet_temp         60 0.27335 0.22041  0.4981                5.86

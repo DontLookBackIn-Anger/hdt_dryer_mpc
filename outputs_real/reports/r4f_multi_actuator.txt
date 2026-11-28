@@ -1,0 +1,41 @@
+================================================================================
+真实数据脚本 4F：多执行器（蒸汽+加水）耦合建模验证 (transformer_data.csv)
+原始行数=4272 -> 剔除末尾停机降温段后稳态行数=4096 | Test=496 窗口
+================================================================================
+            model          target  horizon_s    rmse     mae      r2  skill_vs_naive_pct
+            Naive outlet_moisture          1 0.00178 0.00145  0.9973                0.00
+   Ridge_MultiAct outlet_moisture          1 0.00123 0.00097  0.9987               31.08
+LightGBM_MultiAct outlet_moisture          1 0.00109 0.00079  0.9990               38.81
+GRU_MultiAct_Phys outlet_moisture          1 0.00176 0.00144  0.9973                0.97
+            Naive     outlet_temp          1 0.06040 0.04729  0.9856                0.00
+   Ridge_MultiAct     outlet_temp          1 0.05027 0.03829  0.9900               16.77
+LightGBM_MultiAct     outlet_temp          1 0.04713 0.03529  0.9912               21.97
+GRU_MultiAct_Phys     outlet_temp          1 0.05520 0.04268  0.9880                8.61
+            Naive outlet_moisture         15 0.02101 0.01666  0.6235                0.00
+   Ridge_MultiAct outlet_moisture         15 0.02129 0.01640  0.6135               -1.32
+LightGBM_MultiAct outlet_moisture         15 0.01984 0.01584  0.6641                5.55
+GRU_MultiAct_Phys outlet_moisture         15 0.02118 0.01673  0.6173               -0.81
+            Naive     outlet_temp         15 0.49539 0.37220  0.5286                0.00
+   Ridge_MultiAct     outlet_temp         15 0.50548 0.32632  0.5092               -2.04
+LightGBM_MultiAct     outlet_temp         15 0.53276 0.34922  0.4548               -7.54
+GRU_MultiAct_Phys     outlet_temp         15 0.50289 0.33315  0.5142               -1.51
+            Naive outlet_moisture         30 0.03070 0.02476  0.1910                0.00
+   Ridge_MultiAct outlet_moisture         30 0.03259 0.02484  0.0880               -6.17
+LightGBM_MultiAct outlet_moisture         30 0.03054 0.02469  0.1994                0.52
+GRU_MultiAct_Phys outlet_moisture         30 0.03027 0.02489  0.2133                1.39
+            Naive     outlet_temp         30 0.69065 0.43137  0.3376                0.00
+   Ridge_MultiAct     outlet_temp         30 0.73202 0.41561  0.2559               -5.99
+LightGBM_MultiAct     outlet_temp         30 0.69734 0.41356  0.3247               -0.97
+GRU_MultiAct_Phys     outlet_temp         30 0.72268 0.40305  0.2747               -4.64
+            Naive outlet_moisture         60 0.04058 0.03064 -0.5571                0.00
+   Ridge_MultiAct outlet_moisture         60 0.04485 0.03528 -0.9017              -10.51
+LightGBM_MultiAct outlet_moisture         60 0.04014 0.03038 -0.5232                1.09
+GRU_MultiAct_Phys outlet_moisture         60 0.04036 0.03036 -0.5402                0.54
+            Naive     outlet_temp         60 0.94014 0.56142 -0.1158                0.00
+   Ridge_MultiAct     outlet_temp         60 0.95160 0.55564 -0.1432               -1.22
+LightGBM_MultiAct     outlet_temp         60 0.93015 0.54253 -0.0923                1.06
+GRU_MultiAct_Phys     outlet_temp         60 0.95345 0.54916 -0.1476               -1.42
+
+【双执行器物理方向检验（60s 处平均响应）】
+  steam_flow   +1 IQR -> Δ水分(60s)=+0.00440% | Δ温度(60s)=+0.0318℃
+  water_flow   +1 IQR -> Δ水分(60s)=+0.00911% | Δ温度(60s)=-0.1801℃

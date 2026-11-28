@@ -1,0 +1,17 @@
+﻿model,target,horizon_s,r4_rmse,r4b_rmse,r4_skill_pct,r4b_skill_pct,skill_gain_pct
+Ridge_ARX,outlet_moisture,30,0.02438,0.02463,3.53,2.54,-0.99
+Ridge_ARX,outlet_moisture,60,0.03336,0.03413,4.97,2.78,-2.19
+Ridge_ARX,outlet_temp,30,0.2388,0.21043,3.67,15.12,11.45
+Ridge_ARX,outlet_temp,60,0.25512,0.22682,6.55,16.91,10.36
+LightGBM,outlet_moisture,30,0.02516,0.02456,0.45,2.83,2.38
+LightGBM,outlet_moisture,60,0.03333,0.03404,5.06,3.04,-2.02
+LightGBM,outlet_temp,30,0.22131,0.2134,10.73,13.92,3.19
+LightGBM,outlet_temp,60,0.2537,0.23041,7.07,15.6,8.53
+Residual_GRU,outlet_moisture,30,0.02611,0.02432,-3.31,3.78,7.09
+Residual_GRU,outlet_moisture,60,0.03439,0.03401,2.05,3.13,1.08
+Residual_GRU,outlet_temp,30,0.29931,0.21599,-20.73,12.88,33.61
+Residual_GRU,outlet_temp,60,0.32576,0.23955,-19.33,12.25,31.58
+TCN_SKNet_Trans,outlet_moisture,30,0.03069,0.02521,-21.42,0.26,21.68
+TCN_SKNet_Trans,outlet_moisture,60,0.04179,0.03617,-19.03,-3.03,16.0
+TCN_SKNet_Trans,outlet_temp,30,0.27619,0.21457,-11.41,13.45,24.86
+TCN_SKNet_Trans,outlet_temp,60,0.29719,0.23718,-8.86,13.12,21.98

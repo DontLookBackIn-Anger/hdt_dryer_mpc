@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0-real-casing",
+  "process": "烟草制丝加料回潮工序（1 Hz 实时采集）",
+  "target_precision": {
+    "outlet_moisture": "0.001% (建议 PLC 至少保留3位小数；若外部数据仅2位小数如1A/1B，须启用15s平滑滤波)",
+    "outlet_temp": "0.01℃"
+  },
+  "core_confirmed_columns": [
+    {"en_name": "feed_rate", "cn_name": "称瞬时流量", "unit": "kg/h", "role": "DV", "batch_col_idx": 0, "1A_1B_col": "称瞬时流量"},
+    {"en_name": "inlet_moisture", "cn_name": "入口含水率", "unit": "%", "role": "DV", "batch_col_idx": 1, "1A_1B_col": "入口含水率"},
+    {"en_name": "casing_flow", "cn_name": "加料瞬时流量", "unit": "kg/h", "role": "MV_ratio", "batch_col_idx": 2, "1A_1B_col": "由加料累积量30s因果差分换算"},
+    {"en_name": "steam_flow", "cn_name": "补偿蒸汽流量", "unit": "kg/h", "role": "MV", "batch_col_idx": 3, "1A_1B_col": "补偿蒸汽流量"},
+    {"en_name": "steam_valve_fb", "cn_name": "补偿蒸汽阀门开度反馈", "unit": "%", "role": "MV_fb", "batch_col_idx": 4, "1A_1B_col": "补偿蒸汽阀门开度反馈"},
+    {"en_name": "outlet_temp", "cn_name": "烟叶出口温度", "unit": "℃", "role": "CV", "batch_col_idx": 5, "1A_1B_col": "烟叶出口温度"},
+    {"en_name": "water_flow", "cn_name": "加水流量", "unit": "kg/h", "role": "MV_optional", "batch_col_idx": 6, "1A_1B_col": "加水流量(1A/1B与18批恒为0; transformer_data非零)"},
+    {"en_name": "outlet_moisture", "cn_name": "出口含水率", "unit": "%", "role": "CV", "batch_col_idx": 8, "1A_1B_col": "出口含水率"},
+    {"en_name": "return_air_temp", "cn_name": "回风温度PV", "unit": "℃", "role": "State", "batch_col_idx": 10, "1A_1B_col": "回风温度PV"},
+    {"en_name": "steam_valve_sp", "cn_name": "补偿蒸汽阀门开度给定", "unit": "%", "role": "MV_sp", "batch_col_idx": 11, "1A_1B_col": "缺失(因果代理为steam_valve_fb)"}
+  ],
+  "pending_vendor_confirmation": [
+    {"batch_col_idx": 7, "observed_range": "78.9~79.3", "note": "几乎恒定，疑似筒体/热风设定量"},
+    {"batch_col_idx": 9, "observed_range": "30.1~32.3", "note": "0.1℃分辨率，与回风温度r=-0.94，疑似入口烟叶/环境温度"}
+  ],
+  "forbidden_leakage_columns": [
+    {"batch_col_idx": 12, "reason": "30s周期更新的控制器衍生统计量，含724尖峰"},
+    {"batch_col_idx": 13, "reason": "30s周期更新的控制器衍生统计量，含9966极端毛刺"},
+    {"batch_col_idx": 14, "reason": "30s周期更新的出口水分偏差指标（目标泄露）"},
+    {"batch_col_idx": 15, "reason": "30s周期更新的出口温度偏差指标（col5+col15≈50.00℃，严重目标泄露）"}
+  ]
+}

@@ -1,0 +1,52 @@
+==============================================================================
+真实数据脚本 4：多模型跨批次多步预测评估报告 (Device=cuda)
+==============================================================================
+          model          target  horizon_s    rmse     mae     r2  skill_vs_naive_pct  train_sec
+          Naive outlet_moisture          1 0.00150 0.00114 0.9990                0.00       0.00
+          Naive     outlet_temp          1 0.03994 0.03161 0.9958                0.00       0.00
+          Naive outlet_moisture         15 0.01649 0.01313 0.8752                0.00       0.00
+          Naive     outlet_temp         15 0.22751 0.18155 0.8625                0.00       0.00
+          Naive outlet_moisture         30 0.02527 0.02030 0.6988                0.00       0.00
+          Naive     outlet_temp         30 0.24791 0.19807 0.8339                0.00       0.00
+          Naive outlet_moisture         60 0.03511 0.02745 0.3941                0.00       0.00
+          Naive     outlet_temp         60 0.27299 0.21690 0.7911                0.00       0.00
+      Ridge_ARX outlet_moisture          1 0.00099 0.00077 0.9996               33.56       0.02
+      Ridge_ARX     outlet_temp          1 0.03729 0.02957 0.9964                6.63       0.02
+      Ridge_ARX outlet_moisture         15 0.01523 0.01208 0.8936                7.64       0.02
+      Ridge_ARX     outlet_temp         15 0.21739 0.17337 0.8744                4.45       0.02
+      Ridge_ARX outlet_moisture         30 0.02438 0.01942 0.7197                3.53       0.02
+      Ridge_ARX     outlet_temp         30 0.23880 0.18986 0.8458                3.67       0.02
+      Ridge_ARX outlet_moisture         60 0.03336 0.02659 0.4528                4.97       0.02
+      Ridge_ARX     outlet_temp         60 0.25512 0.20215 0.8176                6.55       0.02
+       LightGBM outlet_moisture          1 0.00115 0.00089 0.9994               23.38      13.61
+       LightGBM     outlet_temp          1 0.03842 0.03054 0.9961                3.80      13.61
+       LightGBM outlet_moisture         15 0.01657 0.01313 0.8740               -0.49      13.61
+       LightGBM     outlet_temp         15 0.21789 0.17409 0.8738                4.23      13.61
+       LightGBM outlet_moisture         30 0.02516 0.02026 0.7015                0.45      13.61
+       LightGBM     outlet_temp         30 0.22131 0.17369 0.8676               10.73      13.61
+       LightGBM outlet_moisture         60 0.03333 0.02641 0.4539                5.06      13.61
+       LightGBM     outlet_temp         60 0.25370 0.20178 0.8196                7.07      13.61
+   Residual_GRU outlet_moisture          1 0.00161 0.00127 0.9988               -7.36       6.68
+   Residual_GRU     outlet_temp          1 0.03971 0.03156 0.9959                0.59       6.68
+   Residual_GRU outlet_moisture         15 0.01672 0.01334 0.8717               -1.41       6.68
+   Residual_GRU     outlet_temp         15 0.26194 0.20980 0.8177              -15.13       6.68
+   Residual_GRU outlet_moisture         30 0.02611 0.02096 0.6785               -3.31       6.68
+   Residual_GRU     outlet_temp         30 0.29931 0.23831 0.7578              -20.73       6.68
+   Residual_GRU outlet_moisture         60 0.03439 0.02749 0.4187                2.05       6.68
+   Residual_GRU     outlet_temp         60 0.32576 0.25882 0.7026              -19.33       6.68
+TCN_SKNet_Trans outlet_moisture          1 0.00181 0.00143 0.9985              -20.96      18.07
+TCN_SKNet_Trans     outlet_temp          1 0.04172 0.03344 0.9955               -4.44      18.07
+TCN_SKNet_Trans outlet_moisture         15 0.01845 0.01474 0.8438              -11.89      18.07
+TCN_SKNet_Trans     outlet_temp         15 0.24668 0.20015 0.8383               -8.42      18.07
+TCN_SKNet_Trans outlet_moisture         30 0.03069 0.02486 0.5559              -21.42      18.07
+TCN_SKNet_Trans     outlet_temp         30 0.27619 0.22342 0.7938              -11.41      18.07
+TCN_SKNet_Trans outlet_moisture         60 0.04179 0.03409 0.1415              -19.03      18.07
+TCN_SKNet_Trans     outlet_temp         60 0.29719 0.23994 0.7524               -8.86      18.07
+
+【物理方向一致性检验：过去 20s 补偿蒸汽 +1 IQR 对未来 60s 预测的平均响应】
+  Residual_GRU       | Δ出口含水率(60s) = +0.00529% | Δ出口温度(60s) = +0.0480℃
+  TCN_SKNet_Trans    | Δ出口含水率(60s) = +0.00159% | Δ出口温度(60s) = +0.0453℃
+  （物理预期：增加蒸汽应使出口含水率与出口温度呈正响应；若为负值，说明模型仍受闭环 PID 伪相关影响）
+
+详细指标 CSV -> /home/atlsa/hdt_dryer_mpc/outputs_real/reports/r4_model_comparison.csv
+对比图已保存 -> /home/atlsa/hdt_dryer_mpc/outputs_real/figures

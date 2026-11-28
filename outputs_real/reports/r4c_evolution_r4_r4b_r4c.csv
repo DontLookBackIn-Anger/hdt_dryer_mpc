@@ -1,0 +1,13 @@
+﻿family,target,horizon_s,r4_v1_skill,r4b_revin_skill,r4c_phys_skill,total_gain
+GRU,outlet_moisture,15,-1.41,10.48,9.81,11.22
+GRU,outlet_moisture,30,-3.31,3.78,2.56,5.87
+GRU,outlet_moisture,60,2.05,3.13,2.27,0.22
+GRU,outlet_temp,15,-15.13,12.81,14.06,29.19
+GRU,outlet_temp,30,-20.73,12.88,14.81,35.54
+GRU,outlet_temp,60,-19.33,12.25,15.89,35.22
+TCN_SKNet_Trans,outlet_moisture,15,-11.89,7.27,3.38,15.27
+TCN_SKNet_Trans,outlet_moisture,30,-21.42,0.26,-1.69,19.73
+TCN_SKNet_Trans,outlet_moisture,60,-19.03,-3.03,-3.32,15.71
+TCN_SKNet_Trans,outlet_temp,15,-8.42,13.22,12.22,20.64
+TCN_SKNet_Trans,outlet_temp,30,-11.41,13.45,11.35,22.76
+TCN_SKNet_Trans,outlet_temp,60,-8.86,13.12,13.52,22.38

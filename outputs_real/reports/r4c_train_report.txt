@@ -1,0 +1,72 @@
+==================================================================================
+真实数据脚本 4C：物理单调性约束 + 分目标专精 + Patch-TCN-SKNet-Transformer 报告 (cuda)
+==================================================================================
+                     model          target  horizon_s    rmse     mae     r2  skill_vs_naive_pct  train_sec
+                     Naive outlet_moisture          1 0.00150 0.00114 0.9990                0.00       0.00
+                     Naive     outlet_temp          1 0.03994 0.03161 0.9958                0.00       0.00
+                     Naive outlet_moisture         15 0.01649 0.01313 0.8752                0.00       0.00
+                     Naive     outlet_temp         15 0.22751 0.18155 0.8625                0.00       0.00
+                     Naive outlet_moisture         30 0.02527 0.02030 0.6988                0.00       0.00
+                     Naive     outlet_temp         30 0.24791 0.19807 0.8339                0.00       0.00
+                     Naive outlet_moisture         60 0.03511 0.02745 0.3941                0.00       0.00
+                     Naive     outlet_temp         60 0.27299 0.21690 0.7911                0.00       0.00
+              DLinear_Phys outlet_moisture          1 0.00087 0.00067 0.9997               42.20      33.63
+              DLinear_Phys     outlet_temp          1 0.03340 0.02639 0.9971               16.39      33.63
+              DLinear_Phys outlet_moisture         15 0.01487 0.01179 0.8985                9.81      33.63
+              DLinear_Phys     outlet_temp         15 0.19702 0.15702 0.8969               13.40      33.63
+              DLinear_Phys outlet_moisture         30 0.02446 0.01963 0.7179                3.23      33.63
+              DLinear_Phys     outlet_temp         30 0.21556 0.17156 0.8744               13.05      33.63
+              DLinear_Phys outlet_moisture         60 0.03441 0.02693 0.4180                1.99      33.63
+              DLinear_Phys     outlet_temp         60 0.23461 0.18322 0.8457               14.06      33.63
+                  GRU_Phys outlet_moisture          1 0.00087 0.00067 0.9997               41.69      44.08
+                  GRU_Phys     outlet_temp          1 0.03317 0.02631 0.9971               16.94      44.08
+                  GRU_Phys outlet_moisture         15 0.01487 0.01178 0.8985                9.81      44.08
+                  GRU_Phys     outlet_temp         15 0.19551 0.15672 0.8984               14.06      44.08
+                  GRU_Phys outlet_moisture         30 0.02462 0.01982 0.7140                2.56      44.08
+                  GRU_Phys     outlet_temp         30 0.21119 0.16760 0.8794               14.81      44.08
+                  GRU_Phys outlet_moisture         60 0.03431 0.02693 0.4213                2.27      44.08
+                  GRU_Phys     outlet_temp         60 0.22962 0.18138 0.8522               15.89      44.08
+Patch_TCN_SKNet_Trans_Phys outlet_moisture          1 0.00114 0.00089 0.9994               23.69      71.05
+Patch_TCN_SKNet_Trans_Phys     outlet_temp          1 0.03958 0.03135 0.9959                0.91      71.05
+Patch_TCN_SKNet_Trans_Phys outlet_moisture         15 0.01593 0.01263 0.8835                3.38      71.05
+Patch_TCN_SKNet_Trans_Phys     outlet_temp         15 0.19970 0.15868 0.8940               12.22      71.05
+Patch_TCN_SKNet_Trans_Phys outlet_moisture         30 0.02570 0.02050 0.6886               -1.69      71.05
+Patch_TCN_SKNet_Trans_Phys     outlet_temp         30 0.21976 0.17471 0.8694               11.35      71.05
+Patch_TCN_SKNet_Trans_Phys outlet_moisture         60 0.03627 0.02850 0.3532               -3.32      71.05
+Patch_TCN_SKNet_Trans_Phys     outlet_temp         60 0.23608 0.18635 0.8438               13.52      71.05
+             Ensemble_Phys outlet_moisture          1 0.00091 0.00070 0.9996               39.05     148.77
+             Ensemble_Phys     outlet_temp          1 0.03426 0.02709 0.9969               14.22     148.77
+             Ensemble_Phys outlet_moisture         15 0.01495 0.01185 0.8974                9.30     148.77
+             Ensemble_Phys     outlet_temp         15 0.19485 0.15566 0.8991               14.35     148.77
+             Ensemble_Phys outlet_moisture         30 0.02446 0.01968 0.7178                3.21     148.77
+             Ensemble_Phys     outlet_temp         30 0.21070 0.16769 0.8800               15.01     148.77
+             Ensemble_Phys outlet_moisture         60 0.03426 0.02684 0.4231                2.42     148.77
+             Ensemble_Phys     outlet_temp         60 0.22812 0.18013 0.8541               16.44     148.77
+
+【验证集集成权重】
+  outlet_moisture  融合权重: DLinear_Phys=0.33, GRU_Phys=0.35, Patch_TCN_SKNet_Trans_Phys=0.32
+  outlet_temp      融合权重: DLinear_Phys=0.33, GRU_Phys=0.35, Patch_TCN_SKNet_Trans_Phys=0.32
+
+【物理方向一致性检验：过去 20s 补偿蒸汽 +1 IQR 对未来 60s 预测的平均响应】
+  DLinear_Phys                 | Δ水分(60s)=-0.01095% | Δ温度(60s)=+0.0762℃ | ⚠️ 需关注
+  GRU_Phys                     | Δ水分(60s)=+0.04495% | Δ温度(60s)=+0.3840℃ | ✅ 双正通过
+  Patch_TCN_SKNet_Trans_Phys   | Δ水分(60s)=+0.01059% | Δ温度(60s)=+0.3598℃ | ✅ 双正通过
+
+【三代模型迭代留痕：r4 (初版) -> r4b (RevIN) -> r4c (物理约束+专精+Patch) Skill%】
+         family          target  horizon_s  r4_v1_skill  r4b_revin_skill  r4c_phys_skill  total_gain
+            GRU outlet_moisture         15        -1.41            10.48            9.81       11.22
+            GRU outlet_moisture         30        -3.31             3.78            2.56        5.87
+            GRU outlet_moisture         60         2.05             3.13            2.27        0.22
+            GRU     outlet_temp         15       -15.13            12.81           14.06       29.19
+            GRU     outlet_temp         30       -20.73            12.88           14.81       35.54
+            GRU     outlet_temp         60       -19.33            12.25           15.89       35.22
+TCN_SKNet_Trans outlet_moisture         15       -11.89             7.27            3.38       15.27
+TCN_SKNet_Trans outlet_moisture         30       -21.42             0.26           -1.69       19.73
+TCN_SKNet_Trans outlet_moisture         60       -19.03            -3.03           -3.32       15.71
+TCN_SKNet_Trans     outlet_temp         15        -8.42            13.22           12.22       20.64
+TCN_SKNet_Trans     outlet_temp         30       -11.41            13.45           11.35       22.76
+TCN_SKNet_Trans     outlet_temp         60        -8.86            13.12           13.52       22.38
+
+详细指标 CSV -> /home/atlsa/hdt_dryer_mpc/outputs_real/reports/r4c_model_comparison.csv
+三代演进 CSV -> /home/atlsa/hdt_dryer_mpc/outputs_real/reports/r4c_evolution_r4_r4b_r4c.csv
+图表已保存   -> /home/atlsa/hdt_dryer_mpc/outputs_real/figures

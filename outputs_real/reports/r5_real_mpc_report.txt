@@ -1,0 +1,15 @@
+==================================================================================
+真实数据脚本 5：加料回潮 MIMO MPC 闭环验证报告（PID vs Real_MPC）
+==================================================================================
+              scenario controller  moist_rmse  moist_mae  temp_rmse  temp_mae  steam_tv
+   1_Setpoint_Tracking        PID      0.1394     0.1143     0.3564    0.2791    0.0491
+   1_Setpoint_Tracking   Real_MPC      0.0879     0.0552     0.2741    0.1817    0.2001
+ 2_Real_1B_Disturbance        PID      0.0323     0.0261     0.0890    0.0776    0.0454
+ 2_Real_1B_Disturbance   Real_MPC      0.0160     0.0128     0.0737    0.0592    0.1260
+3_Plant_Model_Mismatch        PID      0.1436     0.1077     0.3621    0.3256    0.0503
+3_Plant_Model_Mismatch   Real_MPC      0.0988     0.0705     0.3733    0.2567    0.2469
+
+【核心控制收益对比（MPC 相对 PID 的 RMSE 降幅）】
+  1_Setpoint_Tracking      | 出口水分 RMSE 降低 +36.9% | 出口温度 RMSE 降低 +23.1%
+  2_Real_1B_Disturbance    | 出口水分 RMSE 降低 +50.5% | 出口温度 RMSE 降低 +17.2%
+  3_Plant_Model_Mismatch   | 出口水分 RMSE 降低 +31.2% | 出口温度 RMSE 降低  -3.1%
